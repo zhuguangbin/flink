@@ -19,6 +19,7 @@
 package org.apache.flink.streaming.connectors.kafka;
 
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.catalog.confluent.ConfluentSchemaRegistryCatalog;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
@@ -165,6 +166,69 @@ public abstract class KafkaTableTestBase extends KafkaTestBase {
 		// ------------- cleanup -------------------
 
 		deleteTestTopic(topic);
+	}
+
+	@Test
+	public void testConfluentSchemaRegistryCatalog() throws Exception {
+		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+		StreamTableEnvironment tEnv = StreamTableEnvironment.create(
+			env,
+			EnvironmentSettings.newInstance()
+				// watermark is only supported in blink planner
+				.useBlinkPlanner()
+				.inStreamingMode()
+				.build()
+		);
+		env.getConfig().setRestartStrategy(RestartStrategies.noRestart());
+		env.setParallelism(1);
+
+		// ---------- Produce an event time stream into Kafka -------------------
+		String groupId = "test-payments1";
+		String zk = "localhost:2181";
+		String bootstraps = "localhost:9092";
+		String schemaRegistryURL = "http://localhost:8081";
+
+		Map<String, String> properties = new HashMap<>();
+		properties.put("connector.version", kafkaVersion());
+		properties.put("connector.properties.zookeeper.connect", zk);
+		properties.put("connector.properties.bootstrap.servers", bootstraps);
+		properties.put("connector.properties.group.id", groupId);
+		properties.put("connector.startup-mode", "earliest-offset");
+		properties.put("update-mode", "append");
+
+		ConfluentSchemaRegistryCatalog catalog = new ConfluentSchemaRegistryCatalog(
+			properties,
+			schemaRegistryURL,
+			"catalog1",
+			"db1");
+		tEnv.registerCatalog("catalog1", catalog);
+
+		// ---------- Consume stream from Kafka -------------------
+
+		String query = "SELECT\n" +
+			"  id, amount\n" +
+			"FROM catalog1.db1.transactions1";
+
+		DataStream<Row> result = tEnv.toAppendStream(tEnv.sqlQuery(query), Row.class);
+		TestingSinkFunction sink = new TestingSinkFunction(10);
+		result.addSink(sink).setParallelism(1);
+
+		try {
+			env.execute("Job_2");
+		} catch (Throwable e) {
+			// we have to use a specific exception to indicate the job is finished,
+			// because the registered Kafka source is infinite.
+			if (!isCausedByJobFinished(e)) {
+				// re-throw
+				throw e;
+			}
+		}
+
+		List<String> expected = Arrays.asList(
+			"2019-12-12 00:00:05.000,2019-12-12 00:00:04.004,3,50.00",
+			"2019-12-12 00:00:10.000,2019-12-12 00:00:06.006,2,5.33");
+
+		assertEquals(expected, TestingSinkFunction.rows);
 	}
 
 	private static final class TestingSinkFunction implements SinkFunction<Row> {

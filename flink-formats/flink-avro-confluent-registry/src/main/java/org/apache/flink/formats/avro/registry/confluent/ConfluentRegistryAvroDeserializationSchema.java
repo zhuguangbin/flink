@@ -22,7 +22,6 @@ import org.apache.flink.formats.avro.AvroDeserializationSchema;
 import org.apache.flink.formats.avro.RegistryAvroDeserializationSchema;
 import org.apache.flink.formats.avro.SchemaCoder;
 
-import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.specific.SpecificRecord;
@@ -36,8 +35,6 @@ import javax.annotation.Nullable;
  * @param <T> type of record it produces
  */
 public class ConfluentRegistryAvroDeserializationSchema<T> extends RegistryAvroDeserializationSchema<T> {
-
-	private static final int DEFAULT_IDENTITY_MAP_CAPACITY = 1000;
 
 	private static final long serialVersionUID = -1671641202177852775L;
 
@@ -64,7 +61,7 @@ public class ConfluentRegistryAvroDeserializationSchema<T> extends RegistryAvroD
 	 * @return deserialized record in form of {@link GenericRecord}
 	 */
 	public static ConfluentRegistryAvroDeserializationSchema<GenericRecord> forGeneric(Schema schema, String url) {
-		return forGeneric(schema, url, DEFAULT_IDENTITY_MAP_CAPACITY);
+		return forGeneric(schema, url);
 	}
 
 	/**
@@ -94,7 +91,7 @@ public class ConfluentRegistryAvroDeserializationSchema<T> extends RegistryAvroD
 	 */
 	public static <T extends SpecificRecord> ConfluentRegistryAvroDeserializationSchema<T> forSpecific(Class<T> tClass,
 			String url) {
-		return forSpecific(tClass, url, DEFAULT_IDENTITY_MAP_CAPACITY);
+		return forSpecific(tClass, url);
 	}
 
 	/**
@@ -113,24 +110,5 @@ public class ConfluentRegistryAvroDeserializationSchema<T> extends RegistryAvroD
 			null,
 			new CachedSchemaCoderProvider(url, identityMapCapacity)
 		);
-	}
-
-	private static class CachedSchemaCoderProvider implements SchemaCoder.SchemaCoderProvider {
-
-		private static final long serialVersionUID = 4023134423033312666L;
-		private final String url;
-		private final int identityMapCapacity;
-
-		CachedSchemaCoderProvider(String url, int identityMapCapacity) {
-			this.url = url;
-			this.identityMapCapacity = identityMapCapacity;
-		}
-
-		@Override
-		public SchemaCoder get() {
-			return new ConfluentSchemaRegistryCoder(new CachedSchemaRegistryClient(
-				url,
-				identityMapCapacity));
-		}
 	}
 }
