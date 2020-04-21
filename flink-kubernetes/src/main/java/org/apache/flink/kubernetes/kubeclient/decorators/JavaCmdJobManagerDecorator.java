@@ -19,9 +19,11 @@
 package org.apache.flink.kubernetes.kubeclient.decorators;
 
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.JobManagerOptions;
 import org.apache.flink.kubernetes.kubeclient.FlinkPod;
 import org.apache.flink.kubernetes.kubeclient.parameters.KubernetesJobManagerParameters;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
+import org.apache.flink.runtime.jobmanager.JobManagerProcessSpec;
 import org.apache.flink.runtime.jobmanager.JobManagerProcessUtils;
 import org.apache.flink.runtime.util.config.memory.ProcessMemorySpec;
 import org.apache.flink.runtime.util.config.memory.ProcessMemoryUtils;
@@ -46,9 +48,12 @@ public class JavaCmdJobManagerDecorator extends AbstractKubernetesStepDecorator 
 
 	@Override
 	public FlinkPod decorateFlinkPod(FlinkPod flinkPod) {
+		final JobManagerProcessSpec processSpec = JobManagerProcessUtils.processSpecFromConfigWithFallbackForLegacyHeap(
+			kubernetesJobManagerParameters.getFlinkConfiguration(),
+			JobManagerOptions.TOTAL_PROCESS_MEMORY);
 		final String startCommand = getJobManagerStartCommand(
 			kubernetesJobManagerParameters.getFlinkConfiguration(),
-			JobManagerProcessUtils.processSpecFromConfig(kubernetesJobManagerParameters.getFlinkConfiguration()),
+			processSpec,
 			kubernetesJobManagerParameters.getFlinkConfDirInPod(),
 			kubernetesJobManagerParameters.getFlinkLogDirInPod(),
 			kubernetesJobManagerParameters.hasLogback(),
