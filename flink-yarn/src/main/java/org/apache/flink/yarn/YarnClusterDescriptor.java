@@ -930,12 +930,15 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 		final boolean hasLogback = logConfigFilePath != null && logConfigFilePath.endsWith(CONFIG_FILE_LOGBACK_NAME);
 		final boolean hasLog4j = logConfigFilePath != null && logConfigFilePath.endsWith(CONFIG_FILE_LOG4J_NAME);
 
+		final JobManagerProcessSpec processSpec = JobManagerProcessUtils.processSpecFromConfigWithFallbackForLegacyHeap(
+			flinkConfiguration,
+			JobManagerOptions.TOTAL_PROCESS_MEMORY);
 		final ContainerLaunchContext amContainer = setupApplicationMasterContainer(
 				yarnClusterEntrypoint,
 				hasLogback,
 				hasLog4j,
 				hasKrb5,
-				JobManagerProcessUtils.processSpecFromConfig(flinkConfiguration));
+				processSpec);
 
 		// setup security tokens
 		if (UserGroupInformation.isSecurityEnabled()) {
