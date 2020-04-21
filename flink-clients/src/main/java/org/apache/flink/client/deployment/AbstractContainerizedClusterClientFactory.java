@@ -37,10 +37,9 @@ public abstract class AbstractContainerizedClusterClientFactory<ClusterID> imple
 	public ClusterSpecification getClusterSpecification(Configuration configuration) {
 		checkNotNull(configuration);
 
-		final int jobManagerMemoryMB = JobManagerProcessUtils.processSpecFromConfig(
-			JobManagerProcessUtils.getConfigurationWithLegacyHeapSizeMappedToNewConfigOption(
+		final int jobManagerMemoryMB = JobManagerProcessUtils.processSpecFromConfigWithFallbackForLegacyHeap(
 				configuration,
-				JobManagerOptions.TOTAL_PROCESS_MEMORY))
+				JobManagerOptions.TOTAL_PROCESS_MEMORY)
 			.getTotalProcessMemorySize()
 			.getMebiBytes();
 
