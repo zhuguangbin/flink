@@ -16,13 +16,15 @@
  * limitations under the License.
  */
 
-package org.apache.flink.formats.avro;
+package org.apache.flink.formats.avro.registry.confluent;
 
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.Preconditions;
 
+import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaParseException;
 import org.apache.avro.generic.GenericDatumWriter;
@@ -39,7 +41,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.nio.ByteBuffer;
 import java.util.Objects;
+import java.util.TimeZone;
 
 /**
  * Serialization schema that serializes {@link Row} into Avro bytes.
@@ -48,9 +52,31 @@ import java.util.Objects;
  * are compatible with Flink's Table & SQL API.
  *
  * <p>Note: Changes in this class need to be kept in sync with the corresponding runtime
- * class {@link AvroRowDeserializationSchema} and schema converter {@link AvroSchemaConverter}.
+ * class {@link CSRAvroRowDeserializationSchema} and schema converter {@link AvroSchemaConverter}.
  */
-public class AvroRowSerializationSchema implements SerializationSchema<Row> {
+public class CSRAvroRowSerializationSchema implements SerializationSchema<Row> {
+
+	/**
+	 * Used for time conversions from SQL types.
+	 */
+	private static final TimeZone LOCAL_TZ = TimeZone.getDefault();
+
+	/**
+	 * the schema registry url. when useRegistry, registryUrl is required.
+	 */
+
+	private String registryUrl;
+
+	/**
+	 * the schema subject. when useRegistry, subject is required.
+	 */
+
+	private String registrySubject;
+
+	/**
+	 * the schema registry client.
+	 */
+	private SchemaRegistryClient schemaRegistry;
 
 	/**
 	 * Avro record class for serialization. Might be null if record class is not available.
@@ -85,9 +111,16 @@ public class AvroRowSerializationSchema implements SerializationSchema<Row> {
 	/**
 	 * Creates an Avro serialization schema for the given specific record class.
 	 *
+	 * @param registryUrl the schema registry url
+	 * @param registrySubject the schema subject
 	 * @param recordClazz Avro record class used to serialize Flink's row to Avro's record
 	 */
-	public AvroRowSerializationSchema(Class<? extends SpecificRecord> recordClazz) {
+	public CSRAvroRowSerializationSchema(String registryUrl, String registrySubject, Class<? extends SpecificRecord> recordClazz) {
+		this.registryUrl = registryUrl;
+		this.registrySubject = registrySubject;
+		Preconditions.checkNotNull(registryUrl, "registryUrl must not be null");
+		Preconditions.checkNotNull(registrySubject, "registrySubject must not be null");
+		this.schemaRegistry = new CachedSchemaRegistryClient(registryUrl, 1000);
 		Preconditions.checkNotNull(recordClazz, "Avro record class must not be null.");
 		this.recordClazz = recordClazz;
 		this.schema = SpecificData.get().getSchema(recordClazz);
@@ -99,10 +132,16 @@ public class AvroRowSerializationSchema implements SerializationSchema<Row> {
 
 	/**
 	 * Creates an Avro serialization schema for the given Avro schema string.
-	 *
+	 * @param registryUrl the schema registry url
+	 * @param registrySubject the schema subject
 	 * @param avroSchemaString Avro schema string used to serialize Flink's row to Avro's record
 	 */
-	public AvroRowSerializationSchema(String avroSchemaString) {
+	public CSRAvroRowSerializationSchema(String registryUrl, String registrySubject, String avroSchemaString) {
+		this.registryUrl = registryUrl;
+		this.registrySubject = registrySubject;
+		Preconditions.checkNotNull(registryUrl, "registryUrl must not be null");
+		Preconditions.checkNotNull(registrySubject, "registrySubject must not be null");
+		this.schemaRegistry = new CachedSchemaRegistryClient(registryUrl, 1000);
 		Preconditions.checkNotNull(avroSchemaString, "Avro schema must not be null.");
 		this.recordClazz = null;
 		this.schemaString = avroSchemaString;
@@ -122,6 +161,11 @@ public class AvroRowSerializationSchema implements SerializationSchema<Row> {
 			// convert to record
 			final GenericRecord record = AvroSchemaConverter.convertRowToAvroRecord(schema, row);
 			arrayOutputStream.reset();
+
+			// TODO: check schema version against registry
+			int id = this.schemaRegistry.getId(registrySubject, schema);
+			arrayOutputStream.write(0);
+			arrayOutputStream.write(ByteBuffer.allocate(4).putInt(id).array());
 			datumWriter.write(record, encoder);
 			encoder.flush();
 			return arrayOutputStream.toByteArray();
@@ -138,24 +182,31 @@ public class AvroRowSerializationSchema implements SerializationSchema<Row> {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		final AvroRowSerializationSchema that = (AvroRowSerializationSchema) o;
-		return Objects.equals(recordClazz, that.recordClazz) && Objects.equals(schemaString, that.schemaString);
+		final CSRAvroRowSerializationSchema that = (CSRAvroRowSerializationSchema) o;
+		return Objects.equals(registryUrl, that.registryUrl) &&
+				Objects.equals(recordClazz, that.recordClazz) &&
+				Objects.equals(schemaString, that.schemaString);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(recordClazz, schemaString);
+		return Objects.hash(registryUrl, recordClazz, schemaString);
 	}
 
 	private void writeObject(ObjectOutputStream outputStream) throws IOException {
+		outputStream.writeUTF(registryUrl);
+		outputStream.writeUTF(registrySubject);
 		outputStream.writeObject(recordClazz);
 		outputStream.writeObject(schemaString); // support for null
 	}
 
 	@SuppressWarnings("unchecked")
 	private void readObject(ObjectInputStream inputStream) throws ClassNotFoundException, IOException {
+		registryUrl = inputStream.readUTF();
+		registrySubject = inputStream.readUTF();
 		recordClazz = (Class<? extends SpecificRecord>) inputStream.readObject();
 		schemaString = (String) inputStream.readObject();
+		schemaRegistry = new CachedSchemaRegistryClient(registryUrl, 1000);
 		if (recordClazz != null) {
 			schema = SpecificData.get().getSchema(recordClazz);
 		} else {
