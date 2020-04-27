@@ -46,11 +46,11 @@ import org.apache.flink.table.descriptors.SchemaRegistryAvroValidator;
 import org.apache.flink.table.expressions.Expression;
 import org.apache.flink.util.Preconditions;
 
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Sets;
+import org.apache.flink.shaded.guava18.com.google.common.cache.CacheBuilder;
+import org.apache.flink.shaded.guava18.com.google.common.cache.CacheLoader;
+import org.apache.flink.shaded.guava18.com.google.common.cache.LoadingCache;
+import org.apache.flink.shaded.guava18.com.google.common.collect.ImmutableMap;
+import org.apache.flink.shaded.guava18.com.google.common.collect.Sets;
 
 import java.io.IOException;
 import java.util.Collections;
